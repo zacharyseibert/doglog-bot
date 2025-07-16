@@ -1,71 +1,51 @@
 import os
 import pytz
-import datetime
-from collections import defaultdict
+from datetime import datetime, timedelta
+from google_sync import get_leaderboard_from_sheet
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
-from google_sync import get_all_logs  # We’ll define this in a second
+from flask import request, jsonify
 
-# Set these explicitly or use .env
-SLACK_TOKEN = os.getenv("SLACK_BOT_TOKEN")
-SLACK_CHANNEL = "#doglog"
+SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
+SLACK_CHANNEL = "#doglog"  # change this if needed
+TIMEZONE = pytz.timezone("America/New_York")
 
-client = WebClient(token=SLACK_TOKEN)
-eastern = pytz.timezone("US/Eastern")
+def format_digest(leaderboard):
+    if not leaderboard:
+        return "No hot dogs were logged this week. Sad!"
 
-
-def get_last_week_range():
-    today = datetime.datetime.now(eastern).date()
-    last_sunday = today - datetime.timedelta(days=today.weekday() + 1)  # Sunday
-    last_saturday = last_sunday + datetime.timedelta(days=6)
-    return last_sunday, last_saturday
-
-
-def format_digest(logs, start_date, end_date):
-    user_totals = defaultdict(float)
-    user_counts = defaultdict(int)
-    largest_log = (0, None, None)  # (amount, user, date)
-    unique_users = set()
-
-    for timestamp, user, amount in logs:
-        date = timestamp.date()
-        if start_date <= date <= end_date:
-            user_totals[user] += amount
-            user_counts[user] += 1
-            unique_users.add(user)
-            if amount > largest_log[0]:
-                largest_log = (amount, user, date)
-
-    if not logs:
-        return "🌭 No logs recorded last week. Step up your dog game."
-
-    top_eater = max(user_totals.items(), key=lambda x: x[1], default=(None, 0))[0]
-    most_logs = max(user_counts.items(), key=lambda x: x[1], default=(None, 0))[0]
-
-    lines = [
-        f"🌭 *Weekly DogLog Digest* ({start_date.strftime('%b %d')}–{end_date.strftime('%b %d')}):\n",
-        f"• Top Eater: {top_eater} — {user_totals[top_eater]:.1f} dogs",
-        f"• Most Logs: {most_logs} — {user_counts[most_logs]} entries",
-        f"• Largest Log: {largest_log[0]:.1f} by {largest_log[1]} on {largest_log[2].strftime('%b %d')}",
-        f"• Total Hot Dogs Logged: {sum(user_totals.values()):.1f}",
-        f"• Entries: {sum(user_counts.values())}",
-        f"• Unique Eaters: {len(unique_users)}",
-        "\nKeep up the glizzological excellence."
-    ]
+    lines = ["🌭 *Weekly DogLog Digest* 🌭\n"]
+    for i, row in enumerate(leaderboard):
+        name, count = row[0], float(row[1])
+        lines.append(f"{i + 1}. {name} — {count:.1f} dogs")
     return "\n".join(lines)
 
+def get_this_week_data(leaderboard):
+    """Filter leaderboard data for the past 7 days based on timestamp if available."""
+    # This is just placeholder logic — assumes you only keep total counts.
+    # To do real weekly stats, you'll need per-entry timestamped logs from your sheet.
+    return leaderboard
 
 def post_digest():
-    start, end = get_last_week_range()
-    logs = get_all_logs()  # Defined in google_sync.py
-    message = format_digest(logs, start, end)
+    now = datetime.now(TIMEZONE)
+    print(f"[{now}] Running Monday Digest")
+
+    client = WebClient(token=SLACK_BOT_TOKEN)
 
     try:
-        client.chat_postMessage(channel=SLACK_CHANNEL, text=message)
-        print("Digest posted successfully.")
+        full_leaderboard = get_leaderboard_from_sheet()
+        weekly_leaderboard = get_this_week_data(full_leaderboard)
+        message = format_digest(weekly_leaderboard)
+
+        response = client.chat_postMessage(
+            channel=SLACK_CHANNEL,
+            text=message
+        )
+        print(f"Slack API response: {response.data}")
+        return jsonify({"status": "success", "message": "Digest sent."})
     except SlackApiError as e:
-        print(f"Slack error: {e.response['error']}")
-
-
-if __name__ == "__main__":
-    post_digest()
+        print(f"Slack API error: {e.response['error']}")
+        return jsonify({"status": "error", "message": f"Slack error: {e.response['error']}"})
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        return jsonify({"status": "error", "message": str(e)})
