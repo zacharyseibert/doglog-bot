@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: doglog-bot
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python doglog_bot.py"
+    plan: free
+
