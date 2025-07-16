@@ -13,21 +13,22 @@ creds_json = json.loads(base64.b64decode(creds_b64).decode("utf-8"))
 creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_json, SCOPE)
 
 client = gspread.authorize(creds)
-sheet = client.open("DogLog").sheet1
+spreadsheet = client.open("DogLog")
+log_sheet = spreadsheet.worksheet("Log")
 
 def log_entry(user: str, count: int):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    sheet.append_row([timestamp, user, count])
+    log_sheet.append_row([timestamp, user, count])
 
 def get_total_from_sheet():
-    data = sheet.get_all_records()
+    data = log_sheet.get_all_records()
     return sum(int(row["Count"]) for row in data if str(row["Count"]).isdigit())
 
 def update_leaderboard():
     return get_leaderboard_from_sheet()
 
 def get_leaderboard_from_sheet():
-    data = sheet.get_all_records()
+    data = log_sheet.get_all_records()
     leaderboard = {}
     for row in data:
         user = row["User"]
@@ -36,10 +37,10 @@ def get_leaderboard_from_sheet():
     return sorted(leaderboard.items(), key=lambda x: x[1], reverse=True)
 
 def get_all_logs_from_sheet():
-    return sheet.get_all_records()
+    return log_sheet.get_all_records()
 
 def get_user_stats():
-    data = sheet.get_all_records()
+    data = log_sheet.get_all_records()
     user_stats = {}
 
     for row in data:

@@ -6,15 +6,18 @@ from slack_sdk.errors import SlackApiError
 from google_sync import get_all_logs_from_sheet
 
 SLACK_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
-SLACK_CHANNEL = "#doglog"  # change if needed
-
+SLACK_CHANNEL = "#doglog"  # Make sure your bot is a member of this channel
 client = WebClient(token=SLACK_TOKEN)
+
 
 def calculate_stats(logs):
     user_totals = defaultdict(int)
     user_weekly = defaultdict(int)
     user_previous_week = defaultdict(int)
     weekly_totals = defaultdict(int)
+    first_log_date = {}
+    most_recent_log_date = {}
+    largest_log = {}
 
     now = datetime.now()
     current_week = now.isocalendar().week
@@ -27,15 +30,15 @@ def calculate_stats(logs):
             continue
 
         user = row.get("User")
-        date_str = row.get("Date")
+        timestamp_str = row.get("Timestamp")
         count_str = row.get("Count")
 
-        if not user or not date_str or not count_str:
+        if not user or not timestamp_str or not count_str:
             continue
 
         try:
-            date = datetime.strptime(date_str, "%Y-%m-%d")
-            count = int(count_str)
+            date = datetime.fromisoformat(timestamp_str)
+            count = float(count_str)
         except (ValueError, TypeError):
             continue
 
@@ -51,7 +54,23 @@ def calculate_stats(logs):
             user_previous_week[user] += count
             weekly_totals[last_week] += count
 
-    return user_totals, user_weekly, user_previous_week, weekly_totals
+        if user not in first_log_date or date < first_log_date[user]:
+            first_log_date[user] = date
+        if user not in most_recent_log_date or date > most_recent_log_date[user]:
+            most_recent_log_date[user] = date
+        if user not in largest_log or count > largest_log[user][0]:
+            largest_log[user] = (count, date)
+
+    return (
+        user_totals,
+        user_weekly,
+        user_previous_week,
+        weekly_totals,
+        first_log_date,
+        most_recent_log_date,
+        largest_log,
+    )
+
 
 def project_group_total(weekly_totals):
     now = datetime.now()
@@ -64,7 +83,9 @@ def project_group_total(weekly_totals):
     projected = int(sum(weekly_totals.values()) + (weeks_remaining * current_avg))
     return projected
 
-def format_digest(user_totals, user_weekly, user_previous_week, weekly_totals):
+
+def format_digest(user_totals, user_weekly, user_previous_week, weekly_totals,
+                  first_log_date, most_recent_log_date, largest_log):
     leaderboard = sorted(user_weekly.items(), key=lambda x: x[1], reverse=True)
     total_this_week = weekly_totals.get(datetime.now().isocalendar().week, 0)
     total_last_week = weekly_totals.get(datetime.now().isocalendar().week - 1, 0)
@@ -84,15 +105,30 @@ def format_digest(user_totals, user_weekly, user_previous_week, weekly_totals):
     for user, count in all_time[:5]:
         message += f"- {user}: {count} total dog(s)\n"
 
-    highest_week_user = max(user_weekly.items(), key=lambda x: x[1], default=("None", 0))
-    highest_all_time_user = max(user_totals.items(), key=lambda x: x[1], default=("None", 0))
-
-    message += f"\n🏆 *Top Glizzy Gladiator This Week:* {highest_week_user[0]} ({highest_week_user[1]} dogs)\n"
-    message += f"🥇 *All-Time Hot Dog Hero:* {highest_all_time_user[0]} ({highest_all_time_user[1]} dogs)\n"
     message += f"\n📈 *% Change from Last Week:* {percent_change:.1f}%"
     message += f"\n📅 *Projected Group Dogs by Next July 4th:* {projected_total}\n"
 
+    message += "\n*Fun Stats:*\n"
+    for user in sorted(user_totals):
+        first = first_log_date.get(user)
+        recent = most_recent_log_date.get(user)
+        largest = largest_log.get(user)
+        entries = sum(1 for row in leaderboard if row[0] == user)
+        avg = round(user_totals[user] / entries, 2) if entries else 0
+        if not (first and recent and largest):
+            continue
+        message += (
+            f"\n🌭 Stats for {user}:\n"
+            f"• Total hot dogs: {user_totals[user]}\n"
+            f"• Entries: {entries}\n"
+            f"• Average per log: {avg}\n"
+            f"• First log: {first.strftime('%b %d')}\n"
+            f"• Most recent log: {recent.strftime('%b %d')}\n"
+            f"• Largest log: {largest[0]} dogs on {largest[1].strftime('%b %d')}\n"
+        )
+
     return message
+
 
 def post_digest():
     try:
@@ -100,8 +136,25 @@ def post_digest():
         if not logs:
             raise ValueError("No logs found.")
 
-        user_totals, user_weekly, user_previous_week, weekly_totals = calculate_stats(logs)
-        message = format_digest(user_totals, user_weekly, user_previous_week, weekly_totals)
+        (
+            user_totals,
+            user_weekly,
+            user_previous_week,
+            weekly_totals,
+            first_log_date,
+            most_recent_log_date,
+            largest_log,
+        ) = calculate_stats(logs)
+
+        message = format_digest(
+            user_totals,
+            user_weekly,
+            user_previous_week,
+            weekly_totals,
+            first_log_date,
+            most_recent_log_date,
+            largest_log,
+        )
 
         response = client.chat_postMessage(channel=SLACK_CHANNEL, text=message)
         print("Message posted:", response)
