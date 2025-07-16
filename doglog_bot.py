@@ -1,32 +1,42 @@
 import os
-from slack_sdk import WebClient
-from slack_sdk.errors import SlackApiError
+import json
+import base64
 from flask import Flask, request, jsonify
-from google_sync import log_entry, get_total_from_sheet, get_leaderboard_from_sheet, get_all_logs_from_sheet
+from slack_sdk.webhook import WebhookClient
+from google_sync import log_entry, get_leaderboard_from_sheet
 
 app = Flask(__name__)
-SLACK_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
-SLACK_CHANNEL = "#doglog"
-client = WebClient(token=SLACK_TOKEN)
+
+SLACK_WEBHOOK_URL = os.environ["SLACK_WEBHOOK_URL"]
+SLACK_COMMAND_TOKEN = os.environ["SLACK_COMMAND_TOKEN"]
 
 @app.route("/doglog", methods=["POST"])
 def doglog():
+    token = request.form.get("token")
+    if token != SLACK_COMMAND_TOKEN:
+        return "Unauthorized", 403
+
     user = request.form.get("user_name")
-    text = request.form.get("text")
+    text = request.form.get("text", "").strip().lower()
+
+    if text == "leaderboard":
+        leaderboard = get_leaderboard_from_sheet()
+        message = "*Current Leaderboard:*\n"
+        for i, (name, count) in enumerate(leaderboard, start=1):
+            message += f"{i}. {name} – {count} 🌭\n"
+        return jsonify({"response_type": "in_channel", "text": message})
+
     try:
         count = float(text)
-        log_entry(user, count)
-        return jsonify(response_type="in_channel", text=f"{user} logged {count} hot dog(s)! 🌭")
     except ValueError:
-        return jsonify(response_type="ephemeral", text="Please enter a valid number of hot dogs.")
+        return "Please enter a valid number of hot dogs."
 
-@app.route("/digest-trigger", methods=["GET"])
-def digest_trigger():
-    token = request.args.get("token")
-    if token != os.environ.get("DIGEST_TRIGGER_TOKEN"):
-        return jsonify(status="error", message="Unauthorized"), 403
-    from monday_digest import post_digest
-    return jsonify(post_digest())
+    log_entry(user, count)
+
+    webhook = WebhookClient(SLACK_WEBHOOK_URL)
+    webhook.send(text=f":hotdog: {user} logged {count} hot dog(s)!")
+
+    return jsonify({"response_type": "in_channel", "text": f"{user} logged {count} hot dog(s)! 🌭"})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
