@@ -1,5 +1,8 @@
 from flask import Flask, request, jsonify
 from leaderboard import init_db, add_hotdogs, get_total, get_leaderboard
+from google_sync import update_leaderboard, log_entry
+import os
+import re
 
 app = Flask(__name__)
 init_db()
@@ -11,35 +14,54 @@ def doglog():
 
     if text.startswith("add"):
         try:
-            count = float(text.split("add")[1].strip())
-            add_hotdogs(user_name, count)
-            total = get_total(user_name)
+            # Regex to support: add 3.5 for @lizzie
+            add_match = re.match(r"add\s+([\d.]+)(?:\s+for\s+(.+))?", text)
+            if not add_match:
+                return jsonify({"text": "Usage: /doglog add [number] (e.g., /doglog add 3.5 for @lizzie)"})
+
+            count = float(add_match.group(1))
+            target_user = add_match.group(2) or user_name
+
+            # Clean up user input
+            target_user = target_user.replace("@", "").strip().lower()
+
+            # Log and update
+            add_hotdogs(target_user, count)
+            log_entry(target_user, count)
+            rows = get_leaderboard()
+            update_leaderboard(rows)
+            total = get_total(target_user)
+
             return jsonify({
                 "response_type": "in_channel",
-                "text": f":hotdog: {user_name} has now logged {total:.1f} hot dogs!"
+                "text": f":hotdog: {user_name} logged {count:.1f} hot dogs for {target_user}! Total: {total:.1f} 🌭"
             })
-        except (IndexError, ValueError):
-            return jsonify({"text": "Usage: /doglog add [number] (e.g., /doglog add 3.5)"})
+        except Exception as e:
+            print(f"Error: {e}")
+            return jsonify({"text": "Something went wrong. Make sure your command looks like: /doglog add 2.5 for @username"})
 
     elif text.startswith("leaderboard"):
-        rows = get_leaderboard()
-        if not rows:
-            return jsonify({"text": "No hot dogs logged yet!"})
+        try:
+            rows = get_leaderboard()
+            if not rows:
+                return jsonify({"text": "No hot dogs logged yet!"})
 
-        leaderboard_text = "\n".join(
-            [f"{i+1}. {name} — {count:.1f} 🌭" for i, (name, count) in enumerate(rows)]
-        )
-        return jsonify({
-            "response_type": "in_channel",
-            "text": "*🌭 DogLog Leaderboard:*\n" + leaderboard_text
-        })
+            leaderboard_text = "\n".join(
+                [f"{i+1}. {name} — {count:.1f} 🌭" for i, (name, count) in enumerate(rows)]
+            )
+            return jsonify({
+                "response_type": "in_channel",
+                "text": "*🌭 DogLog Leaderboard:*\n" + leaderboard_text
+            })
+        except Exception as e:
+            print(f"Error generating leaderboard: {e}")
+            return jsonify({"text": "Error loading leaderboard."})
 
     else:
         return jsonify({
-            "text": "Try:\n• /doglog add [number]\n• /doglog leaderboard"
+            "text": "Try:\n• /doglog add [number] (e.g., /doglog add 2.5)\n• /doglog add [number] for [username] (e.g., /doglog add 1 for @katie)\n• /doglog leaderboard"
         })
 
 if __name__ == "__main__":
-    import os
     port = int(os.environ.get("PORT", 3000))
     app.run(host="0.0.0.0", port=port)
