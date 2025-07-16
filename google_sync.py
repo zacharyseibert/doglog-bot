@@ -1,96 +1,93 @@
-import os
-import base64
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
-from collections import defaultdict
 
-SHEET_NAME = "DogLog Leaderboard"
+# Google Sheet config
+SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+CREDS_FILE = "credentials.json"
+SHEET_NAME = "DogLog"
 
-# Write credentials.json if not present
-if not os.path.exists("credentials.json"):
-    encoded = os.environ.get("GOOGLE_CREDENTIALS_B64")
-    if encoded:
-        with open("credentials.json", "wb") as f:
-            f.write(base64.b64decode(encoded))
-    else:
-        raise Exception("Missing GOOGLE_CREDENTIALS_B64 environment variable")
-
-# Set up client
-scope = [
-    "https://spreadsheets.google.com/feeds",
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive"
-]
-creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+# Initialize client and sheet
+creds = ServiceAccountCredentials.from_json_keyfile_name(CREDS_FILE, SCOPE)
 client = gspread.authorize(creds)
-sheet = client.open(SHEET_NAME)
+sheet = client.open(SHEET_NAME).sheet1
 
-# Worksheets
-log_tab = sheet.worksheet("Log")
-leaderboard_tab = sheet.worksheet("Leaderboard")
+def log_entry(username, count):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    sheet.append_row([username, count, timestamp])
 
-def log_entry(username, amount):
-    log_tab.append_row([
-        datetime.utcnow().isoformat(),
-        username.lower(),
-        float(amount)
-    ])
-
-def get_leaderboard_from_sheet():
-    records = log_tab.get_all_values()[1:]  # Skip header
-    totals = defaultdict(float)
-    for row in records:
-        if len(row) >= 3:
-            user = row[1].strip().lower()
-            try:
-                totals[user] += float(row[2])
-            except ValueError:
-                continue
-    sorted_totals = sorted(totals.items(), key=lambda x: -x[1])
-    return sorted_totals
-
-def update_leaderboard(data):
-    leaderboard_tab.clear()
-    leaderboard_tab.append_row(["Username", "HotDogs"])
-    for username, count in data:
-        leaderboard_tab.append_row([username, round(count, 1)])
+def update_leaderboard(username):
+    leaderboard = get_leaderboard_from_sheet()
+    total = leaderboard.get(username, 0)
+    total += 0  # No increment here; logic should live outside if needed
+    return total
 
 def get_total_from_sheet(username):
-    username = username.lower().strip()
-    leaderboard = get_leaderboard_from_sheet()
-    for user, count in leaderboard:
-        if user == username:
-            return count
-    return 0.0
-def get_user_stats(username):
-    """Returns a list of (timestamp, count) tuples for a given user from the Log tab."""
-    sheet = client.open(SHEET_NAME)
-    log_tab = sheet.worksheet("Log")
-    rows = log_tab.get_all_values()[1:]  # skip header
-    stats = []
-    for row in rows:
-        if len(row) >= 3 and row[1].strip().lower() == username.strip().lower():
+    data = sheet.get_all_values()
+    total = 0
+    for row in data[1:]:  # skip header
+        if row[0] == username:
             try:
-                timestamp = row[0]
-                count = float(row[2])
-                stats.append((timestamp, count))
-            except:
+                total += float(row[1])
+            except ValueError:
                 continue
-    return sorted(stats, key=lambda x: x[0])
-def get_all_logs():
-    """Returns a list of (timestamp, username, count) from the Log tab."""
-    sheet = client.open(SHEET_NAME)
-    log_tab = sheet.worksheet("Log")
-    rows = log_tab.get_all_values()[1:]  # Skip header
-    result = []
-    for row in rows:
+    return total
+
+def get_leaderboard_from_sheet():
+    data = sheet.get_all_values()
+    leaderboard = {}
+    for row in data[1:]:  # skip header
+        username = row[0]
         try:
-            timestamp = datetime.datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S")
-            timestamp = pytz.utc.localize(timestamp).astimezone(eastern)
-            username = row[1].strip().lower()
-            count = float(row[2])
-            result.append((timestamp, username, count))
-        except:
+            count = float(row[1])
+        except ValueError:
             continue
-    return result
+        leaderboard[username] = leaderboard.get(username, 0) + count
+    return leaderboard
+
+def get_user_stats(username):
+    data = sheet.get_all_values()
+    entries = []
+    for row in data[1:]:  # skip header
+        if row[0] == username:
+            try:
+                amount = float(row[1])
+                timestamp = datetime.strptime(row[2], "%Y-%m-%d %H:%M:%S")
+                entries.append((amount, timestamp))
+            except (ValueError, IndexError):
+                continue
+
+    if not entries:
+        return None
+
+    total = sum(x[0] for x in entries)
+    count = len(entries)
+    avg = total / count
+    first_log = min(entries, key=lambda x: x[1])[1]
+    last_log = max(entries, key=lambda x: x[1])[1]
+    largest_entry = max(entries, key=lambda x: x[0])
+
+    return {
+        "total": round(total, 2),
+        "count": count,
+        "average": round(avg, 2),
+        "first_log": first_log,
+        "last_log": last_log,
+        "largest_entry": largest_entry
+    }
+
+def get_all_logs_from_sheet():
+    data = sheet.get_all_values()
+    logs = []
+
+    for row in data[1:]:  # skip header
+        if len(row) >= 3 and row[0] and row[1] and row[2]:
+            username = row[0]
+            try:
+                amount = float(row[1])
+                timestamp = row[2]
+                logs.append((username, amount, timestamp))
+            except ValueError:
+                continue
+
+    return logs
