@@ -25,9 +25,9 @@ def doglog():
         rows = get_leaderboard()
         if not rows:
             return jsonify({"text": "No hot dogs logged yet!"})
-leaderboard_text = "\n".join(
-    [f"{i+1}. {name} — {count:.1f} 🌭" for i, (name, count) in enumerate(rows)]
-)
+	leaderboard_text = "\n".join(
+    	[f"{i+1}. {name} — {count:.1f} 🌭" for i, (name, count) in enumerate(rows)]
+	)	
         return jsonify({
             "response_type": "in_channel",
             "text": "*🌭 DogLog Leaderboard:*\n" + leaderboard_text
