@@ -78,3 +78,19 @@ def get_user_stats(username):
             except:
                 continue
     return sorted(stats, key=lambda x: x[0])
+def get_all_logs():
+    """Returns a list of (timestamp, username, count) from the Log tab."""
+    sheet = client.open(SHEET_NAME)
+    log_tab = sheet.worksheet("Log")
+    rows = log_tab.get_all_values()[1:]  # Skip header
+    result = []
+    for row in rows:
+        try:
+            timestamp = datetime.datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S")
+            timestamp = pytz.utc.localize(timestamp).astimezone(eastern)
+            username = row[1].strip().lower()
+            count = float(row[2])
+            result.append((timestamp, username, count))
+        except:
+            continue
+    return result
