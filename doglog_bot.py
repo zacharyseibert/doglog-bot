@@ -16,18 +16,19 @@ def doglog():
             total = get_total(user_name)
             return jsonify({
                 "response_type": "in_channel",
-                "text": f":hotdog: {user_name} has now logged {total} hot dogs!"
+                "text": f":hotdog: {user_name} has now logged {total:.1f} hot dogs!"
             })
         except (IndexError, ValueError):
-            return jsonify({"text": "Usage: /doglog add [number]"})
+            return jsonify({"text": "Usage: /doglog add [number] (e.g., /doglog add 3.5)"})
 
     elif text.startswith("leaderboard"):
         rows = get_leaderboard()
         if not rows:
             return jsonify({"text": "No hot dogs logged yet!"})
-	leaderboard_text = "\n".join(
-    	[f"{i+1}. {name} — {count:.1f} 🌭" for i, (name, count) in enumerate(rows)]
-	)	
+
+        leaderboard_text = "\n".join(
+            [f"{i+1}. {name} — {count:.1f} 🌭" for i, (name, count) in enumerate(rows)]
+        )
         return jsonify({
             "response_type": "in_channel",
             "text": "*🌭 DogLog Leaderboard:*\n" + leaderboard_text
