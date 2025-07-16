@@ -11,7 +11,7 @@ def doglog():
 
     if text.startswith("add"):
         try:
-            count = int(text.split("add")[1].strip())
+            count = float(text.split("add")[1].strip())
             add_hotdogs(user_name, count)
             total = get_total(user_name)
             return jsonify({
@@ -25,10 +25,9 @@ def doglog():
         rows = get_leaderboard()
         if not rows:
             return jsonify({"text": "No hot dogs logged yet!"})
-
-        leaderboard_text = "\n".join(
-            [f"{i+1}. {name} — {count} 🌭" for i, (name, count) in enumerate(rows)]
-        )
+leaderboard_text = "\n".join(
+    [f"{i+1}. {name} — {count:.1f} 🌭" for i, (name, count) in enumerate(rows)]
+)
         return jsonify({
             "response_type": "in_channel",
             "text": "*🌭 DogLog Leaderboard:*\n" + leaderboard_text
