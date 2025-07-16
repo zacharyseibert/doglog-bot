@@ -63,3 +63,18 @@ def get_total_from_sheet(username):
         if user == username:
             return count
     return 0.0
+def get_user_stats(username):
+    """Returns a list of (timestamp, count) tuples for a given user from the Log tab."""
+    sheet = client.open(SHEET_NAME)
+    log_tab = sheet.worksheet("Log")
+    rows = log_tab.get_all_values()[1:]  # skip header
+    stats = []
+    for row in rows:
+        if len(row) >= 3 and row[1].strip().lower() == username.strip().lower():
+            try:
+                timestamp = row[0]
+                count = float(row[2])
+                stats.append((timestamp, count))
+            except:
+                continue
+    return sorted(stats, key=lambda x: x[0])
