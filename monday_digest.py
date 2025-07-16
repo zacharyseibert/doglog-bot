@@ -1,82 +1,114 @@
 import os
-import datetime
+from datetime import datetime, timedelta
 from collections import defaultdict
 from slack_sdk import WebClient
-from google_sync import get_leaderboard_from_sheet, get_all_logs_from_sheet
+from slack_sdk.errors import SlackApiError
+from google_sync import get_all_logs_from_sheet
 
-client = WebClient(token=os.environ.get("SLACK_BOT_TOKEN"))
-CHANNEL = "#doglog"
+SLACK_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
+SLACK_CHANNEL = "#doglog"  # change if needed
+
+client = WebClient(token=SLACK_TOKEN)
+
+def calculate_stats(logs):
+    user_totals = defaultdict(int)
+    user_weekly = defaultdict(int)
+    user_previous_week = defaultdict(int)
+    weekly_totals = defaultdict(int)
+
+    now = datetime.now()
+    current_week = now.isocalendar().week
+    current_year = now.year
+    last_week = current_week - 1 if current_week > 1 else 52
+    last_week_year = current_year if current_week > 1 else current_year - 1
+
+    for row in logs:
+        if not isinstance(row, dict):
+            continue
+
+        user = row.get("User")
+        date_str = row.get("Date")
+        count_str = row.get("Count")
+
+        if not user or not date_str or not count_str:
+            continue
+
+        try:
+            date = datetime.strptime(date_str, "%Y-%m-%d")
+            count = int(count_str)
+        except (ValueError, TypeError):
+            continue
+
+        user_totals[user] += count
+
+        week = date.isocalendar().week
+        year = date.isocalendar().year
+
+        if week == current_week and year == current_year:
+            user_weekly[user] += count
+            weekly_totals[current_week] += count
+        elif week == last_week and year == last_week_year:
+            user_previous_week[user] += count
+            weekly_totals[last_week] += count
+
+    return user_totals, user_weekly, user_previous_week, weekly_totals
+
+def project_group_total(weekly_totals):
+    now = datetime.now()
+    next_july_4 = datetime(year=now.year + 1, month=7, day=4)
+    if now.month == 7 and now.day > 4:
+        next_july_4 = datetime(year=now.year + 1, month=7, day=4)
+
+    weeks_remaining = (next_july_4 - now).days // 7
+    current_avg = sum(weekly_totals.values()) / len(weekly_totals) if weekly_totals else 0
+    projected = int(sum(weekly_totals.values()) + (weeks_remaining * current_avg))
+    return projected
+
+def format_digest(user_totals, user_weekly, user_previous_week, weekly_totals):
+    leaderboard = sorted(user_weekly.items(), key=lambda x: x[1], reverse=True)
+    total_this_week = weekly_totals.get(datetime.now().isocalendar().week, 0)
+    total_last_week = weekly_totals.get(datetime.now().isocalendar().week - 1, 0)
+    percent_change = (
+        ((total_this_week - total_last_week) / total_last_week) * 100
+        if total_last_week else 0
+    )
+    projected_total = project_group_total(weekly_totals)
+
+    message = "*🌭 DogLog Monday Digest 🌭*\n\n"
+    message += "*Top Doggers This Week:*\n"
+    for i, (user, count) in enumerate(leaderboard[:10], start=1):
+        message += f"{i}. {user}: {count} dog(s)\n"
+
+    message += "\n*All-Time Totals:*\n"
+    all_time = sorted(user_totals.items(), key=lambda x: x[1], reverse=True)
+    for user, count in all_time[:5]:
+        message += f"- {user}: {count} total dog(s)\n"
+
+    highest_week_user = max(user_weekly.items(), key=lambda x: x[1], default=("None", 0))
+    highest_all_time_user = max(user_totals.items(), key=lambda x: x[1], default=("None", 0))
+
+    message += f"\n🏆 *Top Glizzy Gladiator This Week:* {highest_week_user[0]} ({highest_week_user[1]} dogs)\n"
+    message += f"🥇 *All-Time Hot Dog Hero:* {highest_all_time_user[0]} ({highest_all_time_user[1]} dogs)\n"
+    message += f"\n📈 *% Change from Last Week:* {percent_change:.1f}%"
+    message += f"\n📅 *Projected Group Dogs by Next July 4th:* {projected_total}\n"
+
+    return message
 
 def post_digest():
-    now = datetime.datetime.now()
-    tz = datetime.timezone(datetime.timedelta(hours=-5))  # EST
-    today = now.astimezone(tz).date()
-    start_of_week = today - datetime.timedelta(days=today.weekday())  # Monday
-    end_of_week = start_of_week + datetime.timedelta(days=6)
-
-    logs = get_all_logs_from_sheet()
-    leaderboard = get_leaderboard_from_sheet()
-
-    # Filter logs for this week and last week
-    this_week_logs = []
-    last_week_logs = []
-    for log in logs:
-        username, amount, timestamp = log
-        log_date = datetime.datetime.strptime(timestamp, "%Y-%m-%d").date()
-        if start_of_week <= log_date <= end_of_week:
-            this_week_logs.append((username, float(amount), log_date))
-        elif (start_of_week - datetime.timedelta(days=7)) <= log_date < start_of_week:
-            last_week_logs.append((username, float(amount), log_date))
-
-    # Build user stats
-    user_totals = defaultdict(float)
-    user_counts = defaultdict(int)
-    user_days = defaultdict(set)
-
-    for username, amount, log_date in this_week_logs:
-        user_totals[username] += amount
-        user_counts[username] += 1
-        user_days[username].add(log_date)
-
-    # Largest log
-    largest_log = max(this_week_logs, key=lambda x: x[1], default=None)
-
-    # Most consistent logger
-    most_days = max(user_days.items(), key=lambda x: len(x[1]), default=(None, set()))
-
-    # Group totals
-    this_week_total = sum(amount for _, amount, _ in this_week_logs)
-    last_week_total = sum(amount for _, amount, _ in last_week_logs)
-    percent_change = ((this_week_total - last_week_total) / last_week_total * 100) if last_week_total else 0
-
-    # Projection
-    days_until_july_4 = (datetime.date(today.year + 1, 7, 4) - today).days
-    projected_total = int(this_week_total * (days_until_july_4 / 7))
-
-    # Format message
-    lines = ["🌭 *Weekly Hot Dog Digest* 🌭", ""]
-
-    if largest_log:
-        lines.append(f"• Largest log: {largest_log[1]} dogs by {largest_log[0]} on {largest_log[2].strftime('%b %d')}")
-    if most_days[0]:
-        lines.append(f"• Most consistent: {most_days[0]} with logs on {len(most_days[1])} days")
-    if user_counts:
-        avg_log = this_week_total / sum(user_counts.values())
-        lines.append(f"• Average log size: {avg_log:.2f} dogs")
-
-    lines.append(f"• Total dogs this week: {this_week_total:.1f}")
-    lines.append(f"• Change from last week: {percent_change:+.1f}%")
-    lines.append(f"• Projected Group Dogs by Next July 4th: {projected_total}")
-
-    lines.append("\n🏆 *All-Time Leaderboard* 🏆")
-    for i, (user, total) in enumerate(leaderboard, 1):
-        lines.append(f"{i}. {user} — {total:.1f} 🌭")
-
-    message = "\n".join(lines)
-
     try:
-        client.chat_postMessage(channel=CHANNEL, text=message)
-    except Exception as e:
-        return {"status": "error", "message": f"Slack error: {e.response['error']}"}
+        logs = get_all_logs_from_sheet()
+        if not logs:
+            raise ValueError("No logs found.")
 
-    return {"status": "success", "message": "Digest posted to Slack"}
+        user_totals, user_weekly, user_previous_week, weekly_totals = calculate_stats(logs)
+        message = format_digest(user_totals, user_weekly, user_previous_week, weekly_totals)
+
+        response = client.chat_postMessage(channel=SLACK_CHANNEL, text=message)
+        print("Message posted:", response)
+        return {"status": "success", "message": "Digest posted successfully."}
+    except SlackApiError as e:
+        print("Slack error:", e.response["error"])
+        return {"status": "error", "message": f"Slack error: {e.response['error']}"}
+    except Exception as e:
+        print("Error posting digest:", str(e))
+        return {"status": "error", "message": f"Error posting digest: {str(e)}"}
