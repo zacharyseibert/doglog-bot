@@ -1,11 +1,9 @@
 from flask import Flask, request, jsonify
-from leaderboard import init_db, add_hotdogs, get_total, get_leaderboard
-from google_sync import update_leaderboard, log_entry
+from google_sync import log_entry, update_leaderboard, get_total_from_sheet, get_leaderboard_from_sheet
 import os
 import re
 
 app = Flask(__name__)
-init_db()
 
 @app.route("/doglog", methods=["POST"])
 def doglog():
@@ -21,37 +19,34 @@ def doglog():
 
             count = float(add_match.group(1))
             target_user = add_match.group(2) or user_name
-
-            # Clean up user input
             target_user = target_user.replace("@", "").strip().lower()
 
-            # Log and update
-            add_hotdogs(target_user, count)
+            # Log to sheet and update leaderboard
             log_entry(target_user, count)
-            rows = get_leaderboard()
-            update_leaderboard(rows)
-            total = get_total(target_user)
+            leaderboard = get_leaderboard_from_sheet()
+            update_leaderboard(leaderboard)
+            total = get_total_from_sheet(target_user)
 
             return jsonify({
                 "response_type": "in_channel",
-                "text": f":hotdog: {user_name} logged {count:.1f} hot dogs for {target_user}! Total: {total:.1f} 🌭"
+                "text": f":hotdog: {user_name} logged {count:.1f} hot dogs for {target_user}! Total: {total:.1f} \U0001f32d"
             })
         except Exception as e:
             print(f"Error: {e}")
-            return jsonify({"text": "Something went wrong. Make sure your command looks like: /doglog add 2.5 for @username"})
+            return jsonify({"text": "Something went wrong. Check your syntax: /doglog add 2.5 for @username"})
 
     elif text.startswith("leaderboard"):
         try:
-            rows = get_leaderboard()
+            rows = get_leaderboard_from_sheet()
             if not rows:
                 return jsonify({"text": "No hot dogs logged yet!"})
 
             leaderboard_text = "\n".join(
-                [f"{i+1}. {name} — {count:.1f} 🌭" for i, (name, count) in enumerate(rows)]
+                [f"{i+1}. {name} — {count:.1f} \U0001f32d" for i, (name, count) in enumerate(rows)]
             )
             return jsonify({
                 "response_type": "in_channel",
-                "text": "*🌭 DogLog Leaderboard:*\n" + leaderboard_text
+                "text": "*\U0001f32d DogLog Leaderboard:*\n" + leaderboard_text
             })
         except Exception as e:
             print(f"Error generating leaderboard: {e}")
@@ -65,3 +60,4 @@ def doglog():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 3000))
     app.run(host="0.0.0.0", port=port)
+

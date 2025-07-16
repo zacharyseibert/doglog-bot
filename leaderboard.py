@@ -8,7 +8,7 @@ def init_db():
         c.execute("""
             CREATE TABLE IF NOT EXISTS leaderboard (
                 username TEXT PRIMARY KEY,
-                count INTEGER DEFAULT 0
+                count REAL DEFAULT 0
             )
         """)
         conn.commit()
