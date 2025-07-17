@@ -1,58 +1,39 @@
 import os
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, make_response
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from google_sync import log_entry, get_leaderboard_from_sheet
 
 SLACK_BOT_TOKEN = os.environ["SLACK_BOT_TOKEN"]
-DEFAULT_CHANNEL = os.environ.get("SLACK_CHANNEL", "#doglog")
-
 client = WebClient(token=SLACK_BOT_TOKEN)
+
 app = Flask(__name__)
 
 @app.route("/doglog", methods=["POST"])
 def doglog():
     data = request.form
-    user_name = data.get("user_name", "unknown")
     text = data.get("text", "").strip()
-    channel_id = data.get("channel_id", DEFAULT_CHANNEL)
+    user_name = data.get("user_name", "Unknown User")
 
-    if text.lower().startswith(("add", "log")):
+    if text.startswith("add"):
         parts = text.split()
-        if len(parts) == 2:
-            # /doglog add 3
-            if parts[1].replace('.', '', 1).isdigit():
-                target_user = user_name
-                count = float(parts[1])
-            else:
-                return jsonify({"text": "Please specify a valid number."}), 200
-        elif len(parts) == 3:
-            # /doglog add drewbie 4
-            target_user = parts[1]
-            if parts[2].replace('.', '', 1).isdigit():
-                count = float(parts[2])
-            else:
-                return jsonify({"text": "Please specify a valid number."}), 200
-        else:
-            return jsonify({"text": "Usage: `/doglog add [user] <count>`"}), 200
-
-        log_entry(target_user, count)
-        message = f"🐶 {target_user} logged {count:.1f} dogs!"
-    elif text.lower() == "leaderboard" or text == "":
+        try:
+            count = float(parts[1])
+            target_user = parts[2] if len(parts) > 2 else user_name
+            log_entry(target_user, count)
+            message = f"{target_user} logged {count} dog(s). 🌭"
+        except (IndexError, ValueError):
+            message = "Usage: `/doglog add [count] [optional user]`"
+    elif text == "leaderboard":
         leaderboard = get_leaderboard_from_sheet()
-        lines = ["🏆 DogLog Leaderboard 🐶"]
-        for i, (user, count) in enumerate(leaderboard, start=1):
-            lines.append(f"{i}. {user}: {count:.1f} dogs")
-        message = "\n".join(lines)
+        message = leaderboard
     else:
-        message = "Please enter a valid subcommand: `add` or `leaderboard`."
+        message = "Try `/doglog add [count] [optional user]` or `/doglog leaderboard`"
 
-    try:
-        client.chat_postMessage(channel=channel_id, text=message)
-    except SlackApiError as e:
-        return jsonify({"error": str(e)}), 500
-
-    return "", 200
+    return make_response(jsonify({
+        "response_type": "in_channel",
+        "text": message
+    }), 200)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000)
