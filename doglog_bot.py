@@ -11,6 +11,10 @@ if not SLACK_BOT_TOKEN:
 client = WebClient(token=SLACK_BOT_TOKEN)
 app = Flask(__name__)
 
+@app.route("/", methods=["GET"])
+def home():
+    return "DogLog is awake!", 200
+
 @app.route("/doglog", methods=["POST"])
 def doglog():
     try:
