@@ -1,3 +1,14 @@
+import os
+from flask import Flask, request, jsonify, make_response
+from slack_sdk import WebClient
+from slack_sdk.errors import SlackApiError
+from google_sync import log_entry, get_leaderboard_from_sheet
+
+SLACK_BOT_TOKEN = os.environ["SLACK_BOT_TOKEN"]
+client = WebClient(token=SLACK_BOT_TOKEN)
+
+app = Flask(__name__)
+
 @app.route("/doglog", methods=["POST"])
 def doglog():
     try:
@@ -37,3 +48,6 @@ def doglog():
             "response_type": "ephemeral",
             "text": f"An error occurred: {e}"
         }), 500)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
