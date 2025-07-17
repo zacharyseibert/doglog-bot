@@ -2,8 +2,7 @@ import os
 from flask import Flask, request, jsonify, make_response
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
-from google_sync import log_entry, get_leaderboard_from_sheet, get_all_logs_from_sheet
-from datetime import datetime
+from google_sync import log_entry, get_leaderboard_from_sheet, get_charity_summary
 
 SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
 if not SLACK_BOT_TOKEN:
@@ -50,15 +49,7 @@ def doglog():
 
         elif text == "charity":
             print("[DEBUG] Handling charity command")
-            logs = get_all_logs_from_sheet()
-            start_date = datetime(2025, 7, 17)
-            total_dogs = sum(
-                float(row["Count"])
-                for row in logs
-                if row["User"].lower() == "moonhammad" and datetime.fromisoformat(row["Timestamp"]) >= start_date
-            )
-            total_amount = total_dogs * 10
-            message = f"moonhammad has eaten {int(total_dogs)} dogs since July 17. That's ${total_amount:.2f} total for his charity. 💸"
+            message = get_charity_summary()
 
         else:
             print("[DEBUG] Unrecognized command")
