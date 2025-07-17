@@ -44,12 +44,16 @@ def doglog():
 
         elif text == "leaderboard":
             print("[DEBUG] Handling leaderboard command")
+            print("[DEBUG] Calling get_leaderboard_from_sheet()")
             leaderboard = get_leaderboard_from_sheet()
+            print(f"[DEBUG] Leaderboard retrieved successfully")
             message = leaderboard
 
         elif text == "charity":
             print("[DEBUG] Handling charity command")
+            print("[DEBUG] Calling get_charity_summary()")
             message = get_charity_summary()
+            print("[DEBUG] Charity summary retrieved successfully")
 
         else:
             print("[DEBUG] Unrecognized command")
