@@ -1,50 +1,44 @@
-import os
-import base64
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+import os
+import json
+import base64
 from datetime import datetime
+from oauth2client.service_account import ServiceAccountCredentials
 
-# Decode and write credentials.json from env var if not already present
-if not os.path.exists("credentials.json"):
-    encoded = os.environ.get("GOOGLE_CREDENTIALS_B64")
-    if encoded:
-        with open("credentials.json", "wb") as f:
-            f.write(base64.b64decode(encoded))
-    else:
-        raise Exception("Missing GOOGLE_CREDENTIALS_B64 environment variable")
-
-# Connect to Google Sheets
-SHEET_NAME = "DogLog Leaderboard"  # Must exactly match your Sheet title
-
-scope = [
-    "https://spreadsheets.google.com/feeds",
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive"
-]
-creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+# Setup Google Sheets credentials
+SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+creds_b64 = os.environ["GOOGLE_CREDENTIALS_B64"]
+creds_json = json.loads(base64.b64decode(creds_b64).decode("utf-8"))
+creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_json, SCOPE)
 client = gspread.authorize(creds)
-sheet = client.open(SHEET_NAME)
 
-# Load specific tabs
-leaderboard_tab = sheet.worksheet("Leaderboard")
-log_tab = sheet.worksheet("Log")
+# Open the DogLog sheet
+sheet = client.open("DogLog").sheet1
 
-def update_leaderboard(data):
-    """
-    Overwrites the 'Leaderboard' tab with updated data.
-    data: list of tuples [(username, count), ...]
-    """
-    leaderboard_tab.clear()
-    leaderboard_tab.append_row(["Username", "HotDogs"])
-    for username, count in data:
-        leaderboard_tab.append_row([username, round(count, 1)])
+def log_entry(user: str, count: float):
+    timestamp = datetime.now().isoformat()
+    sheet.append_row([timestamp, user, count])
 
-def log_entry(username, amount):
-    """
-    Appends a new row to the 'Log' tab with timestamp, username, and amount.
-    """
-    log_tab.append_row([
-        datetime.utcnow().isoformat(),
-        username,
-        float(amount)
-    ])
+def get_total_from_sheet():
+    data = sheet.get_all_records()
+    return sum(float(row["Count"]) for row in data if str(row["Count"]).replace('.', '', 1).isdigit())
+
+def get_leaderboard_from_sheet():
+    data = sheet.get_all_records()
+    leaderboard = {}
+    for row in data:
+        user = row["User"]
+        count = float(row["Count"]) if str(row["Count"]).replace('.', '', 1).isdigit() else 0
+        leaderboard[user] = leaderboard.get(user, 0) + count
+
+    sorted_leaderboard = sorted(leaderboard.items(), key=lambda x: x[1], reverse=True)
+
+    # Format as string for Slack
+    if not sorted_leaderboard:
+        return "No logs yet!"
+
+    lines = [f"{i+1}. {user}: {count:.1f} dog(s)" for i, (user, count) in enumerate(sorted_leaderboard)]
+    return "\n".join(lines)
+
+def get_all_logs_from_sheet():
+    return sheet.get_all_records()

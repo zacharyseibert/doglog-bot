@@ -41,4 +41,10 @@ def get_leaderboard_from_sheet():
     return "\n".join(lines)
 
 def get_all_logs_from_sheet():
-    return sheet.get_all_records()
+    """Returns all rows as list of dicts with headers."""
+    rows = sheet.get_all_values()
+    if not rows or len(rows) < 2:
+        return []
+
+    headers = rows[0]
+    return [dict(zip(headers, row)) for row in rows[1:]]

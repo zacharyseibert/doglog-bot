@@ -1,45 +1,70 @@
-from flask import Flask, request, jsonify
-from leaderboard import init_db, add_hotdogs, get_total, get_leaderboard
+import os
+from flask import Flask, request, jsonify, make_response
+from slack_sdk import WebClient
+from slack_sdk.errors import SlackApiError
+from google_sync import log_entry, get_leaderboard_from_sheet
 
+SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
+if not SLACK_BOT_TOKEN:
+    raise EnvironmentError("Missing SLACK_BOT_TOKEN environment variable")
+
+client = WebClient(token=SLACK_BOT_TOKEN)
 app = Flask(__name__)
-init_db()
+
+@app.route("/", methods=["GET"])
+def home():
+    return "DogLog is awake!", 200
 
 @app.route("/doglog", methods=["POST"])
 def doglog():
-    user_name = request.form.get("user_name")
-    text = request.form.get("text", "").strip().lower()
+    try:
+        print("[DEBUG] /doglog endpoint hit")
 
-    if text.startswith("add"):
-        try:
-            count = float(text.split("add")[1].strip())
-            add_hotdogs(user_name, count)
-            total = get_total(user_name)
-            return jsonify({
-                "response_type": "in_channel",
-                "text": f":hotdog: {user_name} has now logged {total:.1f} hot dogs!"
-            })
-        except (IndexError, ValueError):
-            return jsonify({"text": "Usage: /doglog add [number] (e.g., /doglog add 3.5)"})
+        data = request.form
+        print(f"[DEBUG] Request data: {data}")
 
-    elif text.startswith("leaderboard"):
-        rows = get_leaderboard()
-        if not rows:
-            return jsonify({"text": "No hot dogs logged yet!"})
+        text = data.get("text", "").strip()
+        user_name = data.get("user_name", "Unknown User")
+        print(f"[DEBUG] Parsed text: '{text}', user: '{user_name}'")
 
-        leaderboard_text = "\n".join(
-            [f"{i+1}. {name} — {count:.1f} 🌭" for i, (name, count) in enumerate(rows)]
-        )
-        return jsonify({
+        if text.startswith("add"):
+            print("[DEBUG] Handling add command")
+            parts = text.split()
+            print(f"[DEBUG] Split parts: {parts}")
+
+            if len(parts) < 2:
+                raise ValueError("Missing count for add command")
+
+            count = float(parts[1])
+            target_user = parts[2] if len(parts) > 2 else user_name
+            print(f"[DEBUG] Logging {count} dog(s) for {target_user}")
+            log_entry(target_user, count)
+
+            message = f"{target_user} logged {count} dog(s). 🌭"
+
+        elif text == "leaderboard":
+            print("[DEBUG] Handling leaderboard command")
+            leaderboard = get_leaderboard_from_sheet()
+            message = leaderboard
+
+        else:
+            print("[DEBUG] Unrecognized command")
+            message = "Try `/doglog add [count] [optional user]` or `/doglog leaderboard`"
+
+        print(f"[DEBUG] Response message: {message}")
+
+        return make_response(jsonify({
             "response_type": "in_channel",
-            "text": "*🌭 DogLog Leaderboard:*\n" + leaderboard_text
-        })
+            "text": message
+        }), 200)
 
-    else:
-        return jsonify({
-            "text": "Try:\n• /doglog add [number]\n• /doglog leaderboard"
-        })
+    except Exception as e:
+        print(f"[ERROR] Exception in /doglog: {e}")
+        return make_response(jsonify({
+            "response_type": "ephemeral",
+            "text": f"Error: {e}"
+        }), 500)
 
 if __name__ == "__main__":
-    import os
-    port = int(os.environ.get("PORT", 3000))
-    app.run(host="0.0.0.0", port=port)
+    print("[INFO] Starting app...")
+    app.run(host="0.0.0.0", port=5000)
