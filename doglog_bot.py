@@ -3,7 +3,7 @@ from flask import Flask, request, jsonify
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from monday_digest import get_digest_message
-from google_sync import get_leaderboard_message, get_log_message
+from google_sync import get_leaderboard_from_sheet as get_leaderboard_message
 
 SLACK_BOT_TOKEN = os.environ["SLACK_BOT_TOKEN"]
 SLACK_CHANNEL = os.environ.get("SLACK_CHANNEL", "#doglog")
