@@ -18,7 +18,7 @@ def doglog():
     command = text or "leaderboard"
 
     if command == "leaderboard":
-        message = get_leaderboard_message()
+	message = "\n".join(get_leaderboard_message())
     elif command == "log":
         message = get_log_message()
     elif command == "digest":

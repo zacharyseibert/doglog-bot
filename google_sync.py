@@ -28,7 +28,12 @@ def get_leaderboard_from_sheet():
         user = row["User"]
         count = float(row["Count"]) if str(row["Count"]).replace('.', '', 1).isdigit() else 0
         leaderboard[user] = leaderboard.get(user, 0) + count
-    return sorted(leaderboard.items(), key=lambda x: x[1], reverse=True)
+
+    sorted_leaderboard = sorted(leaderboard.items(), key=lambda x: x[1], reverse=True)
+
+    # Format as string for Slack
+    lines = [f"{i+1}. {user}: {count:.1f} dogs" for i, (user, count) in enumerate(sorted_leaderboard)]
+    return "\n".join(lines) if lines else "No logs yet!"
 
 def get_all_logs_from_sheet():
     return sheet.get_all_records()
