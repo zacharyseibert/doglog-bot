@@ -48,3 +48,15 @@ def get_all_logs_from_sheet():
 
     headers = rows[0]
     return [dict(zip(headers, row)) for row in rows[1:]]
+
+def get_charity_summary():
+    """Summarizes the total dogs logged by moonhammad since July 17 and calculates total owed."""
+    data = get_all_logs_from_sheet()
+    start_date = datetime(2025, 7, 17)
+    total_dogs = sum(
+        float(row["Count"])
+        for row in data
+        if row["User"].lower() == "moonhammad" and datetime.fromisoformat(row["Timestamp"]) >= start_date
+    )
+    total_dollars = total_dogs * 5 * 2  # Two contributors at $5 each
+    return f"moonhammad has eaten {int(total_dogs)} dogs since July 17. That's ${total_dollars:.2f} total for his charity. 💸"
