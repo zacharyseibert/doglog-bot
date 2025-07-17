@@ -102,3 +102,9 @@ def post_digest():
     except Exception as e:
         print("Error posting digest:", str(e))
         return {"status": "error", "message": f"Error posting digest: {str(e)}"}
+def get_digest_message():
+    logs = get_all_logs_from_sheet()
+    if not logs:
+        raise ValueError("No logs found.")
+    stats = calculate_stats(logs)
+    return format_digest(*stats)
