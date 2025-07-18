@@ -75,7 +75,7 @@ def get_charity_summary():
             except Exception as inner:
                 print(f"[DEBUG] Error processing row {row}: {inner}")
 
-        total_dollars = total_dogs * 5 * 2  # Two contributors at $5 each
+        total_dollars = total_dogs * 5 * 3  # Two contributors at $5 each
         print(f"[DEBUG] Total dogs: {total_dogs}, Total dollars: {total_dollars}")
 
         return f"moonhammad has eaten {int(total_dogs)} dogs since July 17. That's ${total_dollars:.2f} total for his charity. 💸"
