@@ -2,7 +2,9 @@ import gspread
 import os
 import json
 import base64
-from datetime import datetime
+from datetime import datetime, timedelta
+from collections import Counter, defaultdict
+import pytz
 from oauth2client.service_account import ServiceAccountCredentials
 
 # Setup Google Sheets credentials
@@ -33,7 +35,6 @@ def get_leaderboard_from_sheet():
 
     sorted_leaderboard = sorted(leaderboard.items(), key=lambda x: x[1], reverse=True)
 
-    # Format as string for Slack
     if not sorted_leaderboard:
         return "No logs yet!"
 
@@ -41,45 +42,106 @@ def get_leaderboard_from_sheet():
     return "\n".join(lines)
 
 def get_all_logs_from_sheet():
-    """Returns all rows as list of dicts with headers."""
     rows = sheet.get_all_values()
     if not rows or len(rows) < 2:
         return []
-
     headers = rows[0]
     return [dict(zip(headers, row)) for row in rows[1:]]
 
 def get_charity_summary():
-    """Summarizes the total dogs logged by moonhammad since July 17 and calculates total owed."""
     try:
-        print("[DEBUG] Entered get_charity_summary()")
         data = get_all_logs_from_sheet()
-        print(f"[DEBUG] Retrieved {len(data)} rows")
-
         start_date = datetime(2025, 7, 17)
         total_dogs = 0
-
         for row in data:
-            try:
-                user = row.get("User", "").lower()
-                timestamp = row.get("Timestamp", "")
-                count = row.get("Count", "")
-
-                if user == "moonhammad":
-                    dt = datetime.fromisoformat(timestamp)
-                    if dt >= start_date:
-                        if str(count).replace('.', '', 1).isdigit():
-                            total_dogs += float(count)
-                        else:
-                            print(f"[DEBUG] Skipping row with invalid count: {count}")
-            except Exception as inner:
-                print(f"[DEBUG] Error processing row {row}: {inner}")
-
-        total_dollars = total_dogs * 5 * 3  # Two contributors at $5 each
-        print(f"[DEBUG] Total dogs: {total_dogs}, Total dollars: {total_dollars}")
-
+            user = row.get("User", "").lower()
+            timestamp = row.get("Timestamp", "")
+            count = row.get("Count", "")
+            if user == "moonhammad":
+                dt = datetime.fromisoformat(timestamp)
+                if dt >= start_date:
+                    if str(count).replace('.', '', 1).isdigit():
+                        total_dogs += float(count)
+        total_dollars = total_dogs * 5 * 3
         return f"moonhammad has eaten {int(total_dogs)} dogs since July 17. That's ${total_dollars:.2f} total for his charity. 💸"
-
     except Exception as e:
         print(f"[ERROR] Exception in get_charity_summary(): {e}")
         raise
+
+def get_stats_summary():
+    data = get_all_logs_from_sheet()
+    if not data:
+        return "No data available."
+
+    df = []
+    for row in data:
+        try:
+            ts = datetime.fromisoformat(row["Timestamp"]).astimezone(pytz.timezone("US/Eastern"))
+            user = row["User"]
+            count = float(row["Count"])
+            df.append({"Timestamp": ts, "User": user, "Count": count, "Date": ts.date()})
+        except:
+            continue
+
+    if not df:
+        return "No valid log entries found."
+
+    today = datetime.now(pytz.timezone("US/Eastern")).date()
+    start_of_week = today - timedelta(days=today.weekday())
+    df_week = [row for row in df if row["Date"] >= start_of_week]
+
+    top_counts = Counter()
+    day_counts = defaultdict(float)
+    streaks = defaultdict(int)
+    day_sets = defaultdict(set)
+    all_time_total = sum(row["Count"] for row in df)
+
+    for row in df_week:
+        top_counts[row["User"]] += row["Count"]
+        day_counts[(row["User"], row["Date"])] += row["Count"]
+        day_sets[row["User"]].add(row["Date"])
+
+    top_5 = top_counts.most_common(5)
+    most_logged_day = max(day_counts.items(), key=lambda x: x[1], default=(("", today), 0))
+
+    # Fastest to 10
+    user_progress = defaultdict(float)
+    reached = {}
+    for row in sorted(df_week, key=lambda x: x["Timestamp"]):
+        u = row["User"]
+        user_progress[u] += row["Count"]
+        if user_progress[u] >= 10 and u not in reached:
+            reached[u] = row["Timestamp"]
+    fastest_user = min(reached.items(), key=lambda x: x[1]) if reached else (None, None)
+
+    # Longest streaks
+    longest = {}
+    for user, dates in day_sets.items():
+        streak = 1
+        max_streak = 1
+        for i in range(1, len(sorted(dates))):
+            d1, d2 = sorted(dates)[i-1:i+1]
+            if (d2 - d1).days == 1:
+                streak += 1
+                max_streak = max(max_streak, streak)
+            else:
+                streak = 1
+        longest[user] = max_streak
+
+    # MVP = total count + 0.5 * streak
+    mvp_scores = {user: top_counts[user] + 0.5 * longest.get(user, 0) for user in top_counts}
+    mvp = max(mvp_scores.items(), key=lambda x: x[1]) if mvp_scores else ("N/A", 0)
+
+    summary = "*🌭 Weekly DogLog Stats*\n\n"
+    summary += "*Top 5 of the Week:*\n" + "\n".join([f"{i+1}. {user}: {count:.1f}" for i, (user, count) in enumerate(top_5)]) + "\n\n"
+    summary += f"*Most Logged in One Day:* {most_logged_day[0][0]} with {most_logged_day[1]:.1f} on {most_logged_day[0][1]}\n"
+    summary += f"*Biggest Single-Day Overeater:* {most_logged_day[0][0]} with {most_logged_day[1]:.1f} on {most_logged_day[0][1]}\n"
+    if fastest_user[0]:
+        summary += f"*Fastest to 10 Dogs:* {fastest_user[0]} at {fastest_user[1].strftime('%Y-%m-%d %H:%M %Z')}\n"
+    else:
+        summary += "*Fastest to 10 Dogs:* N/A\n"
+    summary += "*Longest Streak This Week:*\n" + "\n".join([f"{user}: {streak} day(s)" for user, streak in longest.items()]) + "\n\n"
+    summary += f"*Total Logged Since Inception:* {all_time_total:.1f}\n"
+    summary += f"*Weekly MVP:* {mvp[0]} with a score of {mvp[1]:.1f}"
+
+    return summary

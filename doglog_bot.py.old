@@ -1,13 +1,20 @@
 import os
+print("[DEBUG] Importing Flask modules")
 from flask import Flask, request, jsonify, make_response
+
+print("[DEBUG] Importing Slack SDK")
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
+
+print("[DEBUG] Importing Google sync functions")
 from google_sync import log_entry, get_leaderboard_from_sheet, get_charity_summary
 
+print("[DEBUG] Fetching Slack bot token")
 SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
 if not SLACK_BOT_TOKEN:
     raise EnvironmentError("Missing SLACK_BOT_TOKEN environment variable")
 
+print("[DEBUG] Initializing Slack client and Flask app")
 client = WebClient(token=SLACK_BOT_TOKEN)
 app = Flask(__name__)
 
@@ -46,7 +53,7 @@ def doglog():
             print("[DEBUG] Handling leaderboard command")
             print("[DEBUG] Calling get_leaderboard_from_sheet()")
             leaderboard = get_leaderboard_from_sheet()
-            print(f"[DEBUG] Leaderboard retrieved successfully")
+            print("[DEBUG] Leaderboard retrieved successfully")
             message = leaderboard
 
         elif text == "charity":
