@@ -86,9 +86,9 @@ def get_stats_summary():
     if not df:
         return "No valid log entries found."
 
-    today = datetime.now(pytz.timezone("US/Eastern")).date()
-    start_of_week = today - timedelta(days=today.weekday())
-    df_week = [row for row in df if row["Date"] >= start_of_week]
+    now = datetime.now(pytz.timezone("US/Eastern"))
+    seven_days_ago = now - timedelta(days=7)
+    df_week = [row for row in df if row["Timestamp"] >= seven_days_ago]
 
     top_counts = Counter()
     day_counts = defaultdict(float)
@@ -102,7 +102,7 @@ def get_stats_summary():
         day_sets[row["User"]].add(row["Date"])
 
     top_5 = top_counts.most_common(5)
-    most_logged_day = max(day_counts.items(), key=lambda x: x[1], default=(("", today), 0))
+    most_logged_day = max(day_counts.items(), key=lambda x: x[1], default=(("", now.date()), 0))
 
     # Fastest to 10
     user_progress = defaultdict(float)
