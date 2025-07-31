@@ -1,20 +1,18 @@
 import os
-print("[DEBUG] Importing Flask modules")
 from flask import Flask, request, jsonify, make_response
-
-print("[DEBUG] Importing Slack SDK")
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
+from google_sync import (
+    log_entry,
+    get_leaderboard_from_sheet,
+    get_charity_summary,
+    get_stats_summary
+)
 
-print("[DEBUG] Importing Google sync functions")
-from google_sync import log_entry, get_leaderboard_from_sheet, get_charity_summary
-
-print("[DEBUG] Fetching Slack bot token")
 SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
 if not SLACK_BOT_TOKEN:
     raise EnvironmentError("Missing SLACK_BOT_TOKEN environment variable")
 
-print("[DEBUG] Initializing Slack client and Flask app")
 client = WebClient(token=SLACK_BOT_TOKEN)
 app = Flask(__name__)
 
@@ -25,48 +23,33 @@ def home():
 @app.route("/doglog", methods=["POST"])
 def doglog():
     try:
-        print("[DEBUG] /doglog endpoint hit")
-
         data = request.form
-        print(f"[DEBUG] Request data: {data}")
-
         text = data.get("text", "").strip()
         user_name = data.get("user_name", "Unknown User")
-        print(f"[DEBUG] Parsed text: '{text}', user: '{user_name}'")
 
         if text.startswith("add"):
-            print("[DEBUG] Handling add command")
             parts = text.split()
-            print(f"[DEBUG] Split parts: {parts}")
-
             if len(parts) < 2:
                 raise ValueError("Missing count for add command")
-
             count = float(parts[1])
             target_user = parts[2] if len(parts) > 2 else user_name
-            print(f"[DEBUG] Logging {count} dog(s) for {target_user}")
             log_entry(target_user, count)
-
             message = f"{target_user} logged {count} dog(s). 🌭"
 
         elif text == "leaderboard":
-            print("[DEBUG] Handling leaderboard command")
-            print("[DEBUG] Calling get_leaderboard_from_sheet()")
-            leaderboard = get_leaderboard_from_sheet()
-            print("[DEBUG] Leaderboard retrieved successfully")
-            message = leaderboard
+            message = get_leaderboard_from_sheet()
 
         elif text == "charity":
-            print("[DEBUG] Handling charity command")
-            print("[DEBUG] Calling get_charity_summary()")
             message = get_charity_summary()
-            print("[DEBUG] Charity summary retrieved successfully")
+
+        elif text == "stats":
+            message = get_stats_summary()
 
         else:
-            print("[DEBUG] Unrecognized command")
-            message = "Try `/doglog add [count] [optional user]`, `/doglog leaderboard`, or `/doglog charity`"
-
-        print(f"[DEBUG] Response message: {message}")
+            message = (
+                "Try `/doglog add [count] [optional user]`, "
+                "`/doglog leaderboard`, `/doglog charity`, or `/doglog stats`"
+            )
 
         return make_response(jsonify({
             "response_type": "in_channel",
@@ -74,12 +57,10 @@ def doglog():
         }), 200)
 
     except Exception as e:
-        print(f"[ERROR] Exception in /doglog: {e}")
         return make_response(jsonify({
             "response_type": "ephemeral",
             "text": f"Error: {e}"
         }), 500)
 
 if __name__ == "__main__":
-    print("[INFO] Starting app...")
     app.run(host="0.0.0.0", port=5000)

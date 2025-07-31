@@ -6,7 +6,8 @@ from google_sync import (
     log_entry,
     get_leaderboard_from_sheet,
     get_charity_summary,
-    get_stats_summary
+    get_stats_summary,
+    get_keeper_summary  # NEW
 )
 
 SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
@@ -45,10 +46,13 @@ def doglog():
         elif text == "stats":
             message = get_stats_summary()
 
+        elif text == "keeper":
+            message = get_keeper_summary()
+
         else:
             message = (
                 "Try `/doglog add [count] [optional user]`, "
-                "`/doglog leaderboard`, `/doglog charity`, or `/doglog stats`"
+                "`/doglog leaderboard`, `/doglog charity`, `/doglog stats`, or `/doglog keeper`"
             )
 
         return make_response(jsonify({

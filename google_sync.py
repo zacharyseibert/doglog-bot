@@ -145,3 +145,48 @@ def get_stats_summary():
     summary += f"*Weekly MVP:* {mvp[0]} with a score of {mvp[1]:.1f}"
 
     return summary
+
+def get_keeper_summary():
+    try:
+        data = get_all_logs_from_sheet()
+        if not data:
+            return "No logs found."
+
+        start_date = datetime(2025, 7, 30, tzinfo=pytz.timezone("US/Eastern"))
+        end_date = datetime(2025, 8, 28, 23, 59, 59, tzinfo=pytz.timezone("US/Eastern"))
+        now = datetime.now(pytz.timezone("US/Eastern"))
+        days_elapsed = max((now - start_date).days + 1, 1)
+        days_remaining = max((end_date - now).days, 0)
+        total_days = (end_date - start_date).days + 1
+
+        progress = defaultdict(float)
+
+        for row in data:
+            try:
+                ts = datetime.fromisoformat(row["Timestamp"]).astimezone(pytz.timezone("US/Eastern"))
+                if start_date <= ts <= end_date:
+                    user = row["User"]
+                    count = float(row["Count"])
+                    progress[user] += count
+            except:
+                continue
+
+        if not progress:
+            return "No logs yet in the Keeper Challenge window."
+
+        summary_lines = ["*🌭 Keeper Challenge Progress (7/30 – 8/28)*\n"]
+        for user, total in sorted(progress.items(), key=lambda x: x[1], reverse=True):
+            pct = min(100 * total / 50, 100)
+            projected_total = total / days_elapsed * total_days
+            will_hit = "✅" if projected_total >= 50 else "❌"
+            needed_per_day = (50 - total) / days_remaining if days_remaining > 0 else 0
+            summary_lines.append(
+                f"{user}: {total:.1f} dogs ({pct:.0f}%) {will_hit} — "
+                f"Projected: {projected_total:.1f}, Needs {needed_per_day:.2f}/day"
+            )
+
+        return "\n".join(summary_lines)
+
+    except Exception as e:
+        print(f"[ERROR] Exception in get_keeper_summary(): {e}")
+        return "Error generating keeper summary."
