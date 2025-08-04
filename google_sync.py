@@ -51,22 +51,39 @@ def get_all_logs_from_sheet():
 def get_charity_summary():
     try:
         data = get_all_logs_from_sheet()
-        start_date = datetime(2025, 7, 17)
-        total_dogs = 0
+        if not data:
+            return "No logs found."
+
+        start_date = datetime(2025, 7, 17, tzinfo=pytz.timezone("US/Eastern"))
+        total_dogs = 0.0
+
         for row in data:
-            user = row.get("User", "").lower()
-            timestamp = row.get("Timestamp", "")
-            count = row.get("Count", "")
-            if user == "moonhammad":
-                dt = datetime.fromisoformat(timestamp)
-                if dt >= start_date:
-                    if str(count).replace('.', '', 1).isdigit():
-                        total_dogs += float(count)
+            user = row.get("User", "").strip().lower()
+            timestamp = row.get("Timestamp", "").strip()
+            count_str = row.get("Count", "").strip()
+
+            if user != "moonhammad":
+                continue
+
+            try:
+                ts = datetime.fromisoformat(timestamp).astimezone(pytz.timezone("US/Eastern"))
+                count = float(count_str)
+            except Exception as parse_error:
+                print(f"[WARN] Skipping bad row: {row} — Error: {parse_error}")
+                continue
+
+            if ts >= start_date:
+                total_dogs += count
+
         total_dollars = total_dogs * 5 * 3
-        return f"moonhammad has eaten {int(total_dogs)} dogs since July 17. That's ${total_dollars:.2f} total for his charity. 💸"
+        return (
+            f"moonhammad has eaten {total_dogs:.1f} dogs since July 17. "
+            f"That's ${total_dollars:.2f} total for his charity. 💸"
+        )
+
     except Exception as e:
         print(f"[ERROR] Exception in get_charity_summary(): {e}")
-        raise
+        return "Error generating charity summary."
 
 def get_stats_summary():
     data = get_all_logs_from_sheet()
